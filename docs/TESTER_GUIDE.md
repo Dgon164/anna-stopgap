@@ -16,13 +16,18 @@ Your data is processed locally, never uploaded anywhere, never fed
 into any learning system, and deleted on request.
 
 **Path B — hands-on (the repo is standalone).** Needs only
-Python 3.12+, numpy, matplotlib — clone and run:
+Python 3.12+, numpy, matplotlib. The easy way: **double-click
+`START_ANNA.bat`** — a page opens in your browser (this computer
+only), drop files on it, read, ask questions in the box. Command
+line, if you prefer:
 
     python honest_report.py yourfile.csv          # one-shot client report
     python anna_edge.py add yourfile.csv          # process once, cache
+    python anna_edge.py add yourshop.db           # whole SQLite db: EVERY table
     python anna_edge.py show yourfile             # review the results
     python anna_edge.py ask yourfile "returns by region"   # ask live
     python anna_edge.py watch --drop dropbox      # drop files, they process themselves
+    python anna_edge.py feed https://host/x.csv   # poll a link, reprocess on change
 
 One honest note: the standalone build runs the full descriptive
 suite (everything above), but the extra certified-rule tier — our

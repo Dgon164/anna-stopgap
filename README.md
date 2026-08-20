@@ -42,19 +42,35 @@ honesty is the product.
     python honest_report.py client.csv --window 2026-06-01 2026-06-14 --window-label "the promo"
     python clean_file.py dirty.csv --resolution revenue=2.5
 
+## The easy way — no command line
+
+**Double-click `START_ANNA.bat`** (or `python anna_ui.py`). A page
+opens in your browser — on this computer only, nothing is uploaded
+anywhere. Drop a file on it; everything processes by itself; you
+review the five-second numbers and the headlines, open the full
+client report, and type questions in plain English. Answers are
+verbatim lines from the receipts; when nothing matches, she says so
+instead of guessing.
+
 ## Anna Edge — process once, ask forever
 
-`anna_edge.py` (2026-08-19) is the local edge-compute layer: drop a
-file, the full pipeline runs by itself, the processed state is cached
-(same bytes never process twice), and from then on you review results
-and ask for specifics live — answers are verbatim receipt lines, and
-where nothing matches she says so instead of guessing.
+`anna_edge.py` (2026-08-19) is the local edge-compute layer under
+that page: drop a file OR A WHOLE DATABASE, the full pipeline runs
+by itself, the processed state is cached (same bytes never process
+twice), and from then on you review results and ask for specifics
+live. A database is processed table by table — EVERY table, never
+just what one query returns (SQLite files and SQLite-compatible
+.sql dumps; live Postgres/MySQL connections not wired yet — export
+and drop).
 
     python anna_edge.py add client.csv          # process + cache (instant if unchanged)
+    python anna_edge.py add shop.db             # a database: every table processed
     python anna_edge.py watch --drop dropbox    # real-time: new/changed files auto-process
+    python anna_edge.py feed https://host/x.csv # direct feed: poll a link, reprocess on change
     python anna_edge.py list                    # what is cached
     python anna_edge.py show client             # review the results
     python anna_edge.py ask client "returns by source"   # live query, no reprocessing
+    python anna_edge.py ask "biggest customers" # searches every cached dataset
     python anna_edge.py report client           # open the full report.html
 
 Build writeup and courts: `docs/BUILD_ANNA_EDGE_2026-08-19.md`.

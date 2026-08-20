@@ -24,12 +24,15 @@ and report.html. Cache key = file content hash: the same bytes never
 process twice; changed bytes always do.
 """
 import argparse
+import csv
 import hashlib
 import json
 import os
 import re
 import sys
 import time
+import urllib.parse
+import urllib.request
 from datetime import datetime
 
 try:
@@ -46,6 +49,8 @@ from analyst_full import (build_extras,         # noqa: E402
                           classify_columns)
 
 DATA_EXTS = {".csv", ".tsv", ".txt"}
+DB_EXTS = {".db", ".sqlite", ".sqlite3"}
+SQL_EXTS = {".sql"}
 
 
 # ---------------------------------------------------------------- store
@@ -240,6 +245,81 @@ def process(source, store, time_col=None, audit=True, force=False,
     return name
 
 
+def export_database(path, store):
+    """EVERY table, whole — never just what one query returns. Each
+    user table is exported to a receipted CSV and becomes its own
+    cached dataset named <db>.<table>. SQLite files and
+    SQLite-compatible .sql dumps; anything else refused plainly."""
+    import sqlite3
+    stem = os.path.splitext(os.path.basename(path))[0]
+    ext = os.path.splitext(path)[1].lower()
+    if ext in SQL_EXTS:
+        con = sqlite3.connect(":memory:")
+        try:
+            con.executescript(open(path, encoding="utf-8-sig",
+                                   errors="replace").read())
+        except sqlite3.Error as e:
+            raise SystemExit(
+                f"REFUSED: could not run "
+                f"{os.path.basename(path)} as a SQL script ({e}). "
+                f"SQLite-compatible dumps only for now — a "
+                f"Postgres/MySQL-dialect dump needs converting, or "
+                f"export the tables to CSV.")
+    else:
+        with open(path, "rb") as f:
+            magic = f.read(16)
+        if not magic.startswith(b"SQLite format 3"):
+            raise SystemExit(
+                f"REFUSED: {os.path.basename(path)} is not an "
+                f"SQLite database file. Live server databases "
+                f"(Postgres/MySQL) aren't wired yet — export to "
+                f"SQLite or CSV and drop that instead. Said "
+                f"honestly rather than guessed at.")
+        con = sqlite3.connect(path)
+    tables = [r[0] for r in con.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' "
+        "AND name NOT LIKE 'sqlite_%' ORDER BY name")]
+    if not tables:
+        raise SystemExit(f"REFUSED: no tables found in "
+                         f"{os.path.basename(path)}.")
+    exp_dir = os.path.join(store, "_db_exports", stem)
+    os.makedirs(exp_dir, exist_ok=True)
+    out = []
+    for t in tables:
+        cur = con.execute(f'SELECT * FROM "{t}"')
+        header = [c[0] for c in cur.description]
+        safe_t = re.sub(r"[^-\w. ]", "_", t)
+        csv_path = os.path.join(exp_dir, f"{stem}.{safe_t}.csv")
+        with open(csv_path, "w", newline="",
+                  encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(header)
+            for row in cur:
+                w.writerow(["" if v is None else v for v in row])
+        out.append((t, csv_path))
+    con.close()
+    return out
+
+
+def process_any(source, store, time_col=None, audit=True,
+                force=False, quiet=False):
+    """One entry for every input shape. A delimited file = one
+    dataset; a database = one dataset PER TABLE, all of them.
+    Returns the list of dataset names."""
+    ext = os.path.splitext(source)[1].lower()
+    if ext in DB_EXTS | SQL_EXTS:
+        tables = export_database(source, store)
+        if not quiet:
+            print(f"{os.path.basename(source)}: database — "
+                  f"{len(tables)} table(s); processing the WHOLE "
+                  f"database, every table", flush=True)
+        return [process(p, store, time_col=None, audit=audit,
+                        force=force, quiet=quiet)
+                for _, p in tables]
+    return [process(source, store, time_col=time_col, audit=audit,
+                    force=force, quiet=quiet)]
+
+
 def load_state(store, name):
     p = os.path.join(store, name, "state.json")
     if not os.path.exists(p):
@@ -308,11 +388,17 @@ def ask_one(state, question):
     """Score every cached section/finding against the question and
     return the best matches VERBATIM. No generation — retrieval only."""
     q = _expand(_words(question) - STOP)
+    ql = " ".join(question.lower().split())
     scored = []
     for sec in state["sections"]:
         title_w = _words(sec["title"])
-        body_w = _words(" ".join(sec["lines"]))
+        body_text = " ".join(sec["lines"]).lower()
+        body_w = _words(body_text)
         score = 3 * len(q & title_w) + min(len(q & body_w), 4)
+        # the question appearing VERBATIM in a section beats
+        # word-bag ties ("revenue by region" names its own block)
+        if len(ql) > 3 and ql in body_text:
+            score += 5
         if score:
             scored.append((score, f"## {sec['title']}", sec["lines"]))
     for f in state["findings"]:
@@ -428,7 +514,8 @@ def cmd_watch(args, store):
         for fn in sorted(os.listdir(drop)):
             path = os.path.join(drop, fn)
             if not os.path.isfile(path) or \
-                    os.path.splitext(fn)[1].lower() not in DATA_EXTS:
+                    os.path.splitext(fn)[1].lower() not in \
+                    DATA_EXTS | DB_EXTS | SQL_EXTS:
                 continue
             try:
                 digest = file_digest(path)
@@ -437,8 +524,8 @@ def cmd_watch(args, store):
             if seen.get(path) == digest:
                 continue
             try:
-                process(path, store, time_col=None,
-                        audit=not args.no_audit)
+                process_any(path, store, time_col=None,
+                            audit=not args.no_audit)
                 seen[path] = digest
             except (Exception, SystemExit) as e:
                 # a refused file (empty, binary, dead engine) must
@@ -454,6 +541,49 @@ def cmd_watch(args, store):
             return
 
 
+def cmd_feed(args, store):
+    """The direct-feed road: poll a link; the moment its bytes
+    change, download and reprocess. Any URL serving a delimited
+    file, an SQLite database, or a SQL dump."""
+    fname = os.path.basename(
+        urllib.parse.urlparse(args.url).path) or "feed.csv"
+    if os.path.splitext(fname)[1].lower() not in \
+            DATA_EXTS | DB_EXTS | SQL_EXTS:
+        fname += ".csv"
+    if args.name:
+        fname = args.name + os.path.splitext(fname)[1]
+    dest_dir = os.path.join(store, "feeds")
+    os.makedirs(dest_dir, exist_ok=True)
+    dest = os.path.join(dest_dir, fname)
+    print(f"feeding from {args.url} every {args.interval}s — "
+          f"reprocesses the moment the content changes. Ctrl+C to "
+          f"stop.", flush=True)
+    last = None
+    while True:
+        try:
+            data = urllib.request.urlopen(args.url,
+                                          timeout=60).read()
+            digest = hashlib.sha256(data).hexdigest()
+            if digest != last:
+                with open(dest, "wb") as f:
+                    f.write(data)
+                try:
+                    process_any(dest, store,
+                                audit=not args.no_audit)
+                except (Exception, SystemExit) as e:
+                    print(f"feed: content refused ({e}) — will "
+                          f"retry when it changes", flush=True)
+                last = digest
+        except OSError as e:
+            print(f"feed: fetch failed ({e}) — retrying next pass",
+                  flush=True)
+        try:
+            time.sleep(args.interval)
+        except KeyboardInterrupt:
+            print("feed stopped.")
+            return
+
+
 def main():
     ap = argparse.ArgumentParser(
         description="anna edge — auto-process, cache, ask live")
@@ -462,7 +592,8 @@ def main():
                          "beside this file)")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    p = sub.add_parser("add", help="process + cache one file")
+    p = sub.add_parser("add", help="process + cache a file or a "
+                                   "whole database (every table)")
     p.add_argument("source")
     p.add_argument("--time", default=None)
     p.add_argument("--no-audit", action="store_true")
@@ -473,6 +604,14 @@ def main():
     p.add_argument("--drop",
                    default=os.path.join(HERE_DIR, "dropbox"))
     p.add_argument("--interval", type=float, default=5.0)
+    p.add_argument("--no-audit", action="store_true")
+
+    p = sub.add_parser("feed", help="poll a link; reprocess the "
+                                    "moment its content changes")
+    p.add_argument("url")
+    p.add_argument("--name", default=None,
+                   help="dataset name (default: from the url)")
+    p.add_argument("--interval", type=float, default=60.0)
     p.add_argument("--no-audit", action="store_true")
 
     sub.add_parser("list", help="what is cached")
@@ -491,10 +630,12 @@ def main():
     args = ap.parse_args()
     store = store_dir(args)
     if args.cmd == "add":
-        process(args.source, store, time_col=args.time,
-                audit=not args.no_audit, force=args.force)
+        process_any(args.source, store, time_col=args.time,
+                    audit=not args.no_audit, force=args.force)
     elif args.cmd == "watch":
         cmd_watch(args, store)
+    elif args.cmd == "feed":
+        cmd_feed(args, store)
     elif args.cmd == "list":
         cmd_list(args, store)
     elif args.cmd == "show":

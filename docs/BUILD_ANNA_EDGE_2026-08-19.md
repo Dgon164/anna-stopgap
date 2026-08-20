@@ -142,6 +142,49 @@ segments; TOTAL footer rows counted as data; date-range
 self-contradiction on unsorted files; per-column time charts skipped
 on ISO-date x; GIG_COPY.md still says `standalone/` paths.
 
+## Part 4 (same day, in anna-stopgap): THE HUMAN ROAD + DATABASES + FEEDS
+
+Owner: "make it intuitive and human usable" + "take sql and other
+database inputs, direct feeds, and be fast, as well as be able to
+process entire db instead of just the standard only what is
+returned."
+
+1. **anna_ui.py + START_ANNA.bat** — double-click, a page opens
+   (127.0.0.1 only, nothing leaves the machine): drag-drop → auto-
+   process with a live status page → KPI tiles, headlines, every
+   section expandable, a question box per dataset AND one across
+   everything, full report one click away, honest refusal pages for
+   Excel/binary/empty files, delete button. Stdlib http.server —
+   zero new dependencies. COURTS: home, upload→303→status→dataset
+   page, ask verbatim, refusal, 149KB report served, docs pages.
+   WOUND FOUND+CURED in court: the multipart parser stripped ALL
+   trailing \r\n bytes — corrupting binary (SQLite) uploads; the
+   format guarantees exactly one, now exactly one is stripped.
+2. **Whole-database intake** — `export_database` + `process_any`:
+   an SQLite file or SQLite-compatible .sql dump is exported table
+   by table (EVERY table, never one query's view) into receipted
+   CSVs, each becoming its own cached dataset `<db>.<table>`; add/
+   watch/feed/UI all take them. Wrong-dialect dumps and non-SQLite
+   binaries refused plainly with what-to-do-instead. Live server
+   connections (Postgres/MySQL) NOT wired — filed, needs drivers.
+   COURTS on a 3-table planted db: every table processed; region
+   revenue east 99,961 (60%, SOLID) vs planted 99,960.65 — to the
+   cent; dump twin ingested identically; both refusals fired.
+3. **Direct feeds** — `feed <url>`: polls a link (any delimited
+   file, db, or dump served over HTTP), sha256-compares, downloads
+   and reprocesses the moment content changes; fetch errors retry,
+   refused content doesn't crash the loop. COURT: served a CSV
+   locally, appended mid-feed → change detected, reprocessed; a
+   proper append re-court confirmed the new row counted (63 rows).
+4. **Ask ranking wound cured**: "revenue by region" tied the
+   profile block with the groups-compare block (where the number
+   lives) and lost on order — cured with a verbatim-phrase bonus;
+   re-courted, the right section leads with the planted numbers.
+5. **Speed**, honestly stated: the cache is the speed story —
+   already-seen bytes are instant (0.18s vs ~14s); a whole db warms
+   table by table once, then every ask is instant. `--no-audit`
+   available where the audit face is the cost.
+
 ## Repo state noticed while checking (for the owner)
 
 dc has two pieces newer than its last commit (02db3b8): untracked
