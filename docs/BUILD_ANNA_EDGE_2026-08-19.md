@@ -185,6 +185,33 @@ returned."
    table by table once, then every ask is instant. `--no-audit`
    available where the audit face is the cost.
 
+## Part 5 (same day): THE QA PACKAGE
+
+Owner: "we need a testing demo and datasets. i need to get my qa in
+on this to review it and develop a ui for it as well."
+
+- **demo_data/**: business_demo3.csv (planted book errors, rows
+  390/590/1702 + 427/632/1206/1363/1966), test_shop.db (3 tables,
+  seeded generator make_demo_db.py, region truth to the cent),
+  currency_test.csv (formatted money, hand truth 6,030.88),
+  dirty_sales.csv (honest UNSTABLE on 62 rows), refusals/ (empty
+  file, wrong-dialect dump).
+- **docs/DEMO_SCRIPT.md**: the 15-minute guided tour with every
+  planted answer listed — QA review = checking against known
+  answers; includes the bug-vs-not-a-bug line (refusals are the
+  product).
+- **demo_data/run_demo_checks.py**: all planted truths asserted
+  automatically — COURTED 13/13 with the engine AND 13/13
+  standalone (QA machines won't have the engine).
+- **THE JSON API** (for the UI developer): /api/datasets,
+  /api/dataset/<name>, /api/ask, /api/upload (multipart),
+  /api/status/<job> on the same local server; docs/API.md carries
+  the state schema and THE HONESTY RULES A UI MUST PRESERVE
+  (grades never upgraded, refusals rendered as answers, numbers
+  verbatim, receipts one click away, standalone said). COURTED:
+  all five routes returning valid JSON end-to-end including
+  upload→status→done.
+
 ## Repo state noticed while checking (for the owner)
 
 dc has two pieces newer than its last commit (02db3b8): untracked

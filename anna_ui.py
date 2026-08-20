@@ -376,6 +376,39 @@ def view_doc(fn):
                 + "\n".join(out))
 
 
+# ---------------------------------------------------------------- api
+# the JSON surface for UI builders: same store, same honesty rules.
+# Everything here is documented in docs/API.md.
+def api_body(obj):
+    return json.dumps(obj, indent=1).encode("utf-8")
+
+
+def api_datasets():
+    idx = anna_edge.load_index(STORE)
+    return {"engine_connected": hr.engine_available(),
+            "datasets": [dict(name=n, **e)
+                         for n, e in sorted(idx.items())]}
+
+
+def api_ask(question, name=None):
+    idx = anna_edge.load_index(STORE)
+    names = [name] if name in idx else sorted(idx)
+    results = []
+    for n in names:
+        state = anna_edge.load_state(STORE, n)
+        if not state:
+            continue
+        hits = anna_edge.ask_one(state, question or "")
+        if hits:
+            results.append({"dataset": n, "hits": [
+                {"score": s, "title": t, "lines": ls}
+                for s, t, ls in hits]})
+    return {"question": question, "results": results,
+            "refusal": None if results else
+            "nothing in the processed state matches — an honest "
+            "refusal, not an error; show it as one"}
+
+
 # ---------------------------------------------------------------- server
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
@@ -409,6 +442,33 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(view_doc(parts[1]))
         if parts[0] == "ask":
             return self._send(view_ask_all(qs.get("q", [""])[0]))
+        if parts[0] == "api":
+            j = "application/json; charset=utf-8"
+            if len(parts) == 2 and parts[1] == "datasets":
+                return self._send(api_body(api_datasets()), 200, j)
+            if len(parts) == 3 and parts[1] == "dataset" \
+                    and safe_name(parts[2]):
+                state = anna_edge.load_state(STORE, parts[2])
+                if state is None:
+                    return self._send(api_body(
+                        {"error": "no such dataset"}), 404, j)
+                return self._send(api_body(state), 200, j)
+            if len(parts) == 2 and parts[1] == "ask":
+                return self._send(api_body(api_ask(
+                    qs.get("q", [""])[0],
+                    qs.get("name", [None])[0])), 200, j)
+            if len(parts) == 3 and parts[1] == "status":
+                with JOBS_LOCK:
+                    job = JOBS.get(parts[2])
+                if job is None:
+                    return self._send(api_body(
+                        {"error": "unknown job"}), 404, j)
+                return self._send(api_body(job), 200, j)
+            return self._send(api_body(
+                {"error": "unknown api route",
+                 "routes": ["/api/datasets", "/api/dataset/<name>",
+                            "/api/ask?q=&name=", "/api/upload",
+                            "/api/status/<job>"]}), 404, j)
         if parts[0] == "d" and len(parts) >= 2 \
                 and safe_name(parts[1]):
             name = parts[1]
@@ -422,38 +482,56 @@ class Handler(BaseHTTPRequestHandler):
         self._send(page("Anna", "<h1>Not found</h1>"
                                 "<p><a href='/'>back</a></p>"), 404)
 
+    def _save_upload(self, body):
+        """Shared by the page and the API: returns (saved_path,
+        refusal_message) — exactly one is None."""
+        fn, data = parse_upload(self.headers, body)
+        if not fn or data is None:
+            return None, "no file received"
+        stem, ext = os.path.splitext(fn)
+        stem = re.sub(r"[^-\w. ()]", "_", stem) or "data"
+        if ext.lower() not in OK_EXTS:
+            return None, (
+                "That looks like an Excel workbook — save it as CSV "
+                "first (File > Save As > 'CSV (Comma delimited)') "
+                "and drop it again."
+                if ext.lower() in (".xls", ".xlsx")
+                else f"'{ext}' files aren't supported — CSV, TSV, "
+                     f"text, SQLite .db, or a .sql dump.")
+        os.makedirs(UPLOADS, exist_ok=True)
+        saved = os.path.join(UPLOADS, stem + ext.lower())
+        with open(saved, "wb") as f:
+            f.write(data)
+        start_job(saved)
+        return saved, None
+
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length)
         parts = [urllib.parse.unquote(p)
                  for p in self.path.split("/") if p]
         if parts and parts[0] == "upload":
-            fn, data = parse_upload(self.headers, body)
-            if not fn or data is None:
-                return self._send(page("Anna",
-                                       "<h1>No file received</h1>"
-                                       "<p><a href='/'>back</a></p>"))
-            stem, ext = os.path.splitext(fn)
-            stem = re.sub(r"[^-\w. ()]", "_", stem) or "data"
-            if ext.lower() not in OK_EXTS:
-                msg = ("That looks like an Excel workbook — save it "
-                       "as CSV first (File &gt; Save As &gt; 'CSV "
-                       "(Comma delimited)') and drop it again."
-                       if ext.lower() in (".xls", ".xlsx")
-                       else f"'{esc(ext)}' files aren't supported — "
-                            f"CSV, TSV, or delimited text only.")
+            saved, refused = self._save_upload(body)
+            if refused:
                 return self._send(page("Anna",
                                        f"<h1>Refused, honestly</h1>"
-                                       f"<div class='warn'>{msg}"
-                                       f"</div><p><a class='btn' "
-                                       f"href='/'>Back</a></p>"))
-            os.makedirs(UPLOADS, exist_ok=True)
-            saved = os.path.join(UPLOADS, stem + ext.lower())
-            with open(saved, "wb") as f:
-                f.write(data)
-            start_job(saved)
+                                       f"<div class='warn'>"
+                                       f"{esc(refused)}</div>"
+                                       f"<p><a class='btn' href='/'>"
+                                       f"Back</a></p>"))
             return self._redirect("/status/"
                                   + urllib.parse.quote(saved))
+        if len(parts) == 2 and parts[0] == "api" \
+                and parts[1] == "upload":
+            j = "application/json; charset=utf-8"
+            saved, refused = self._save_upload(body)
+            if refused:
+                return self._send(api_body({"refusal": refused}),
+                                  422, j)
+            return self._send(api_body(
+                {"job": saved,
+                 "status_url": "/api/status/"
+                               + urllib.parse.quote(saved)}), 200, j)
         if len(parts) == 3 and parts[0] == "d" \
                 and parts[2] == "delete" and safe_name(parts[1]):
             name = parts[1]

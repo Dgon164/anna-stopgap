@@ -75,6 +75,19 @@ and drop).
 
 Build writeup and courts: `docs/BUILD_ANNA_EDGE_2026-08-19.md`.
 
+## For QA and UI builders
+
+- `docs/DEMO_SCRIPT.md` — the guided tour: planted-truth demo files
+  in `demo_data/` with the expected answers listed, so reviewing =
+  checking her against known answers.
+- `python demo_data/run_demo_checks.py` — every planted check
+  automatically, PASS/FAIL, exit code 0 = green (13 checks; runs
+  with or without the engine).
+- `docs/API.md` — the local JSON API (`/api/datasets`, `/api/
+  dataset/<name>`, `/api/ask`, `/api/upload`, `/api/status`) plus
+  the state schema and the honesty rules any new UI must preserve.
+  `anna_ui.py` is the reference implementation, not the final UI.
+
 Requires: Python 3.12+, numpy, matplotlib. **This repo is
 STANDALONE** (2026-08-19): clone it and everything runs — the full
 department-organ suite, graded what's-there trends, charts, KPIs,
