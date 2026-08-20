@@ -1,0 +1,5 @@
+﻿__pycache__/
+*.pyc
+# edge layer: client data and its processed cache stay local, never on GitHub
+edge_store/
+dropbox/
