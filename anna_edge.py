@@ -145,13 +145,14 @@ def process(source, store, time_col=None, audit=True, force=False,
                   f"what's-there tier only (said in the report)",
                   flush=True)
     else:
+        eng_csv = hr.engine_input(rows, header, norm_csv, notes)
         extra = ["--analyst"] + (["--time", time_col]
                                  if time_col else [])
-        analyst_text, t1 = hr.run_engine(norm_csv, extra)
+        analyst_text, t1 = hr.run_engine(eng_csv, extra)
         if not quiet:
             print(f"{name}: analyst face {t1:.1f}s", flush=True)
         if audit:
-            audit_text, t2 = hr.run_engine(norm_csv, ["--audit"])
+            audit_text, t2 = hr.run_engine(eng_csv, ["--audit"])
             if not quiet:
                 print(f"{name}: audit face {t2:.1f}s", flush=True)
 
@@ -172,10 +173,15 @@ def process(source, store, time_col=None, audit=True, force=False,
         tcol = next((h for h in header
                      if kinds.get(h, {}).get("kind") == "date"),
                     None)
+    ts = time.perf_counter()
     described = hr.describe_columns(rows, header, findings, tcol)
     chart_dir = os.path.join(out_dir, "charts")
     charts = hr.make_charts(rows, header, findings, tcol, chart_dir,
                             described)
+    if not quiet:
+        print(f"{name}: describe+charts "
+              f"{time.perf_counter() - ts:.1f}s", flush=True)
+    ts = time.perf_counter()
     try:
         heads, blocks, kpis = build_extras(rows, header, tcol,
                                            described, chart_dir, None)
@@ -187,6 +193,9 @@ def process(source, store, time_col=None, audit=True, force=False,
                  f"hide it", ""]
         blocks, kpis = [], []
 
+    if not quiet:
+        print(f"{name}: analytics blocks "
+              f"{time.perf_counter() - ts:.1f}s", flush=True)
     if analyst_text:
         with open(os.path.join(out_dir, "receipts_analyst.txt"), "w",
                   encoding="utf-8") as f:
@@ -195,9 +204,13 @@ def process(source, store, time_col=None, audit=True, force=False,
         with open(os.path.join(out_dir, "receipts_audit.txt"), "w",
                   encoding="utf-8") as f:
             f.write(audit_text)
+    ts = time.perf_counter()
     hr.render(name, header, len(rows), notes, findings, audit_d,
               charts, analyst_text, audit_text, out_dir, t1 + t2,
               described, (heads, blocks, kpis), None, None)
+    if not quiet:
+        print(f"{name}: render {time.perf_counter() - ts:.1f}s",
+              flush=True)
 
     # split the block markdown into named sections for the query road
     sections, cur = [], None
@@ -240,8 +253,9 @@ def process(source, store, time_col=None, audit=True, force=False,
                      engine_secs=state["engine_secs"])
     save_index(store, idx)
     if not quiet:
-        print(f"{name}: cached — report -> {state['report']}",
-              flush=True)
+        print(f"{name}: cached — total wall clock "
+              f"{state['total_secs']}s — report -> "
+              f"{state['report']}", flush=True)
     return name
 
 

@@ -75,6 +75,26 @@ and drop).
 
 Build writeup and courts: `docs/BUILD_ANNA_EDGE_2026-08-19.md`.
 
+## Scale testing and output validation
+
+`testing/` holds the at-scale test rig:
+
+- `make_scale_data.py --rows N --out f.csv` — seeded generator;
+  writes the dataset AND `f.csv.truths.json` with the exact
+  expected answers (totals, per-region sums, planted rule
+  violations, the planted biggest order, the planted refund day).
+- `validate_outputs.py --store S --name D --truths T` — the
+  independent checker: shares no code with anna, re-reads the data
+  with its own arithmetic, and compares every checkable claim —
+  intake fidelity to the cent, displayed numbers to their shown
+  precision, and zero false accusations in the rule-violation
+  lists. This is the same independent-recomputation method that
+  caught the customer-counting bug in the July blind test,
+  automated.
+- `run_scale_test.py --sizes 10000,100000,1000000` — generate →
+  process → validate at each size, with wall-clock timings.
+  Measured results live in `docs/SCALE_RESULTS.md`.
+
 ## For QA and UI builders
 
 - `docs/DEMO_SCRIPT.md` — the guided tour: planted-truth demo files

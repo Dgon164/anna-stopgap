@@ -281,6 +281,31 @@ def standalone_findings(header, kinds):
             if kinds.get(h, {}).get("kind") in ("numeric", "rate")]
 
 
+ENGINE_SAMPLE_ROWS = int(os.environ.get("ANNA_ENGINE_SAMPLE",
+                                        "10000"))
+
+
+def engine_input(rows, header, norm_csv, notes):
+    """The certified-law tier does not scale (measured 2026-08-22:
+    ~30s at 10k rows, >30 minutes at 100k). Above the threshold the
+    engine runs on a seeded random sample and the report SAYS SO —
+    every descriptive number is still computed on ALL rows."""
+    if len(rows) <= ENGINE_SAMPLE_ROWS:
+        return norm_csv
+    import random as _random
+    idx = sorted(_random.Random(17).sample(range(len(rows)),
+                                           ENGINE_SAMPLE_ROWS))
+    sample_csv = norm_csv[:-4] + ".engine_sample.csv"
+    write_csv([rows[i] for i in idx], header, sample_csv)
+    notes.append(
+        f"certified-rule tier ran on a seeded random sample of "
+        f"{ENGINE_SAMPLE_ROWS:,} of {len(rows):,} rows (its law "
+        f"search is too slow past ~10k rows) — those findings are "
+        f"sample-certified and labeled; every other number in this "
+        f"report is computed on ALL rows")
+    return sample_csv
+
+
 def run_engine(csv_path, extra):
     """Run the promoted CLI untouched; return its verbatim text."""
     cmd = [sys.executable, os.path.join(DC, "askisaac.py"), csv_path] + extra
@@ -822,12 +847,13 @@ def main():
               "engine beside anna or set ISAAC_ENGINE_DIR to turn "
               "certification on.)", flush=True)
     else:
+        eng_csv = engine_input(rows, header, norm_csv, notes)
         extra = ["--analyst"] + (["--time", args.time]
                                  if args.time else [])
-        analyst_text, t1 = run_engine(norm_csv, extra)
+        analyst_text, t1 = run_engine(eng_csv, extra)
         print(f"analyst face: {t1:.1f}s", flush=True)
         if not args.no_audit:
-            audit_text, t2 = run_engine(norm_csv, ["--audit"])
+            audit_text, t2 = run_engine(eng_csv, ["--audit"])
             print(f"audit face: {t2:.1f}s", flush=True)
 
     # identifiers and coordinates are labels wearing numbers — the
@@ -850,9 +876,13 @@ def main():
         time_col = next((h for h in header
                          if kinds.get(h, {}).get("kind") == "date"),
                         None)
+    t = time.perf_counter()
     described = describe_columns(rows, header, findings, time_col)
     charts = make_charts(rows, header, findings, time_col,
                          os.path.join(out_dir, "charts"), described)
+    print(f"describe+charts: {time.perf_counter() - t:.1f}s",
+          flush=True)
+    t = time.perf_counter()
     try:
         win = ((args.window[0], args.window[1], args.window_label)
                if args.window else None)
@@ -907,9 +937,13 @@ def main():
         with open(os.path.join(out_dir, "receipts_audit.txt"), "w",
                   encoding="utf-8") as f:
             f.write(audit_text)
+    print(f"analytics blocks: {time.perf_counter() - t:.1f}s",
+          flush=True)
+    t = time.perf_counter()
     render(name, header, len(rows), notes, findings, audit, charts,
            analyst_text, audit_text, out_dir, t1 + t2, described,
            extras, narrative, args.brand)
+    print(f"render: {time.perf_counter() - t:.1f}s", flush=True)
     print(f"report -> {os.path.join(out_dir, 'report.html')}", flush=True)
 
 
