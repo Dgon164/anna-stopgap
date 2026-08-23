@@ -11,15 +11,16 @@ market scan — receipts in the session record. Paste-ready.)*
 ## The three offers (research-ranked by conversion)
 
 ### 1. Spreadsheet Cleaning + Audit with Receipts — the volume gig
-"I will clean your Excel/CSV and hand back the cleaned file **plus a
-changelog receipting every single change** — and an audit that flags
-what needs your judgment instead of silently 'fixing' it."
+"I will clean your spreadsheet export (CSV — from Excel: File >
+Save As > CSV) and hand back the cleaned file **plus a changelog
+receipting every single change** — and an audit that flags what
+needs your judgment instead of silently 'fixing' it."
 - Basic $15: one file ≤5k rows, cleaned file + changelog, 24h
 - Standard $50: + the audit (error/duplicate/outlier flags with
   receipts; we ask your tolerance rather than assume), 24h
 - Premium $95: multi-file + joins + re-audit proving the mechanical
   passes are clean, 48h
-- Run: `python standalone/clean_file.py file.csv [--resolution
+- Run: `python clean_file.py file.csv [--resolution
   col=sigma]` → cleaned.csv + CHANGELOG.md. Mechanical fixes only
   (delimiters, headers, whitespace, missing markers, exact dupes —
   each receipted); anything needing judgment is FLAGGED, never
@@ -35,7 +36,7 @@ what needs your judgment instead of silently 'fixing' it."
 sales/finance/e-commerce CSV — every number traced to a receipt.
 **If a column can't support a forecast, the report says NO RULE and
 shows why. You will never get a made-up number.**"
-- Core $45–95 (report + charts, 48h) · $125+ with dashboard, 72h
+- Core $45–95 (report + charts, 48h)
 - Two tiers of claims in every report (owner ruling 2026-07-28):
   a **certified rule** passed the strictest checks; a **what's-there
   description** reports the plain trend graded SOLID/WEAK/UNSTABLE
@@ -122,7 +123,8 @@ funds effectively can't be reversed — prefer them for new clients.
 
 ## The per-job road (honesty laws apply to the business too)
 
-1. Client file in → `python standalone/honest_report.py file.csv`
+1. Client file in → `python honest_report.py file.csv` (or drop it
+   on the START_ANNA.bat page and open the full report)
 2. **Owner reads the report before it ships** (platform policies
    require human review; our laws require it anyway). Curate: drop
    trivial findings (e.g. the year column's trend), keep every
